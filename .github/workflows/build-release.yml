@@ -8,6 +8,10 @@ on:
       - 'v*'
   workflow_dispatch:
 
+# 创建 Release 需要写权限；不声明时 GITHUB_TOKEN 默认只读
+permissions:
+  contents: write
+
 jobs:
   build:
     strategy:
@@ -18,7 +22,7 @@ jobs:
             target: aarch64-apple-darwin
             bundles: app
             label: macOS-AppleSilicon
-          - platform: macos-13
+          - platform: macos-15-intel
             target: x86_64-apple-darwin
             bundles: app
             label: macOS-Intel
@@ -29,6 +33,8 @@ jobs:
 
     runs-on: ${{ matrix.platform }}
     name: ${{ matrix.label }}
+    # 防止某个 runner 排队/卡死时无限期占住 release
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v4
