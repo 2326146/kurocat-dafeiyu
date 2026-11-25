@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>KuroCat Chat</title>
+    <link rel="stylesheet" href="/src/chat.css" />
+  </head>
+  <body class="chat-window-body">
+    <div class="chat-card" id="chat-card">
+      <header class="chat-head">
+        <span class="chat-title">大肥鱼</span>
+        <select class="chat-model" id="chat-model" title="选择模型"></select>
+        <button class="chat-collapse" id="btn-chat-collapse" type="button" title="收起">−</button>
+      </header>
+      <div class="chat-log" id="chat-log"></div>
+      <form class="chat-input-row" id="chat-form">
+        <textarea
+          id="chat-input"
+          rows="1"
+          placeholder="说点什么…"
+          autocomplete="off"
+          spellcheck="false"
+        ></textarea>
+        <button class="chat-send" type="submit" title="发送">↑</button>
+      </form>
+    </div>
+    <script type="module" src="/src/chatMain.ts"></script>
+  </body>
+</html>
