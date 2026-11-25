@@ -12,6 +12,7 @@ const formEl = document.getElementById('chat-form') as HTMLFormElement;
 const inputEl = document.getElementById('chat-input') as HTMLTextAreaElement;
 const sendEl = formEl.querySelector('.chat-send') as HTMLButtonElement;
 const collapseEl = document.getElementById('btn-chat-collapse') as HTMLButtonElement;
+const clearEl = document.getElementById('btn-chat-clear') as HTMLButtonElement;
 const modelEl = document.getElementById('chat-model') as HTMLSelectElement;
 
 interface ProviderInfo {
@@ -310,6 +311,38 @@ formEl.addEventListener('submit', (ev) => {
 });
 
 collapseEl.addEventListener('click', () => hideWindow());
+
+// 两段式确认：不依赖原生 confirm 对话框（WebView 里不一定实现）
+let clearArmed = false;
+let clearTimer: number | null = null;
+
+function disarmClear(): void {
+  clearArmed = false;
+  if (clearTimer !== null) window.clearTimeout(clearTimer);
+  clearTimer = null;
+  clearEl.textContent = '⌫';
+  clearEl.title = '清空对话';
+}
+
+clearEl.addEventListener('click', async () => {
+  if (sending) return;
+  if (!clearArmed) {
+    clearArmed = true;
+    clearEl.textContent = '✓';
+    clearEl.title = '再点一次确认清空';
+    clearTimer = window.setTimeout(disarmClear, 3000);
+    return;
+  }
+  disarmClear();
+  try {
+    await invoke('clear_chat_history');
+  } catch {
+    // 文件本来就不存在时会被忽略
+  }
+  history.length = 0;
+  logEl.innerHTML = '';
+  appendMessage('bot', '对话清空了，重新开始吧。');
+});
 
 // ---------- 启动 ----------
 
