@@ -55,8 +55,7 @@
       }
     },
     "macOS": {
-      "minimumSystemVersion": "10.15",
-      "signingIdentity": "KuroCat Local Signing"
+      "minimumSystemVersion": "10.15"
     },
     "linux": {
       "deb": {
