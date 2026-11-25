@@ -6,12 +6,21 @@
     <link rel="stylesheet" href="/src/chat.css" />
   </head>
   <body class="chat-window-body">
+    <!-- 左边缘悬停热区：停 200ms 滑出会话抽屉 -->
+    <div class="chat-hotzone" id="chat-hotzone" aria-hidden="true"></div>
+
+    <div class="chat-drawer-mask" id="chat-drawer-mask"></div>
+    <aside class="chat-drawer" id="chat-drawer" aria-label="最近对话">
+      <div class="drawer-head">最近对话</div>
+      <div class="drawer-list" id="drawer-list"></div>
+    </aside>
+
     <div class="chat-card" id="chat-card">
       <header class="chat-head">
         <span class="chat-title">大肥鱼</span>
         <select class="chat-model" id="chat-model" title="选择模型"></select>
-        <button class="chat-collapse" id="btn-chat-clear" type="button" title="清空对话">⌫</button>
-        <button class="chat-collapse" id="btn-chat-collapse" type="button" title="收起">−</button>
+        <button class="chat-icon-btn" id="btn-chat-new" type="button" title="新建对话">＋</button>
+        <button class="chat-icon-btn" id="btn-chat-collapse" type="button" title="收起">−</button>
       </header>
       <div class="chat-log" id="chat-log"></div>
       <form class="chat-input-row" id="chat-form">

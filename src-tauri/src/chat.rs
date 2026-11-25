@@ -72,10 +72,6 @@ pub fn providers_path() -> PathBuf {
     crate::config::app_data_dir().join("providers.json")
 }
 
-fn chat_history_path() -> PathBuf {
-    crate::config::app_data_dir().join("chat-history.json")
-}
-
 const TEMPLATE: &str = r#"{
   "providers": [
     {
@@ -155,38 +151,125 @@ pub fn chat_providers_path() -> String {
     providers_path().to_string_lossy().to_string()
 }
 
-// ---------------- 聊天历史 ----------------
+// ---------------- 对话记录（多会话） ----------------
 
-#[tauri::command]
-pub fn load_chat_history() -> Result<Vec<ChatMessage>, String> {
-    let path = chat_history_path();
-    if !path.exists() {
-        return Ok(Vec::new());
-    }
-    let text = std::fs::read_to_string(&path).map_err(|e| format!("读取历史失败：{e}"))?;
-    if text.trim().is_empty() {
-        return Ok(Vec::new());
-    }
-    serde_json::from_str(&text).map_err(|e| format!("历史文件格式错误：{e}"))
+#[derive(Deserialize, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct Conversation {
+    pub id: String,
+    pub title: String,
+    #[serde(default)]
+    pub created_at: i64,
+    #[serde(default)]
+    pub updated_at: i64,
+    pub messages: Vec<ChatMessage>,
 }
 
-#[tauri::command]
-pub fn save_chat_history(turns: Vec<ChatMessage>) -> Result<(), String> {
-    let path = chat_history_path();
+#[derive(Deserialize, Serialize, Default)]
+struct ConversationsFile {
+    conversations: Vec<Conversation>,
+}
+
+/// 最多保留的会话数量
+const MAX_CONVERSATIONS: usize = 50;
+
+fn conversations_path() -> PathBuf {
+    crate::config::app_data_dir().join("conversations.json")
+}
+
+fn legacy_history_path() -> PathBuf {
+    crate::config::app_data_dir().join("chat-history.json")
+}
+
+fn now_millis() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+fn read_conversations() -> Vec<Conversation> {
+    if !conversations_path().exists() {
+        migrate_legacy_history();
+    }
+    let Ok(text) = std::fs::read_to_string(conversations_path()) else {
+        return Vec::new();
+    };
+    serde_json::from_str::<ConversationsFile>(&text)
+        .map(|f| f.conversations)
+        .unwrap_or_default()
+}
+
+fn write_conversations(list: &[Conversation]) -> Result<(), String> {
+    let path = conversations_path();
     if let Some(dir) = path.parent() {
         let _ = std::fs::create_dir_all(dir);
     }
-    let json = serde_json::to_string_pretty(&turns).map_err(|e| e.to_string())?;
-    std::fs::write(&path, json).map_err(|e| format!("写入历史失败：{e}"))
+    let payload = ConversationsFile {
+        conversations: list.to_vec(),
+    };
+    let json = serde_json::to_string_pretty(&payload).map_err(|e| e.to_string())?;
+    std::fs::write(&path, json).map_err(|e| format!("写入对话记录失败：{e}"))
+}
+
+/// 把旧的单文件历史（扁平数组）迁移成一条会话，原文件改名为 .bak 保留。
+fn migrate_legacy_history() {
+    let legacy = legacy_history_path();
+    if !legacy.exists() {
+        return;
+    }
+    let Ok(text) = std::fs::read_to_string(&legacy) else {
+        return;
+    };
+    let Ok(messages) = serde_json::from_str::<Vec<ChatMessage>>(&text) else {
+        return;
+    };
+    if !messages.is_empty() {
+        let title = messages
+            .iter()
+            .find(|m| m.role == "user")
+            .map(|m| m.content.chars().take(14).collect::<String>())
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| "历史对话".to_string());
+        let ts = now_millis();
+        let conv = Conversation {
+            id: format!("conv-{ts}"),
+            title,
+            created_at: ts,
+            updated_at: ts,
+            messages,
+        };
+        let _ = write_conversations(&[conv]);
+    }
+    let _ = std::fs::rename(&legacy, legacy.with_extension("json.bak"));
 }
 
 #[tauri::command]
-pub fn clear_chat_history() -> Result<(), String> {
-    let path = chat_history_path();
-    if path.exists() {
-        std::fs::remove_file(&path).map_err(|e| format!("清空历史失败：{e}"))?;
+pub fn list_conversations() -> Result<Vec<Conversation>, String> {
+    let mut list = read_conversations();
+    list.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    Ok(list)
+}
+
+#[tauri::command]
+pub fn save_conversation(conv: Conversation) -> Result<(), String> {
+    let mut list = read_conversations();
+    match list.iter_mut().find(|c| c.id == conv.id) {
+        Some(slot) => *slot = conv,
+        None => list.push(conv),
     }
-    Ok(())
+    list.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    if list.len() > MAX_CONVERSATIONS {
+        list.truncate(MAX_CONVERSATIONS);
+    }
+    write_conversations(&list)
+}
+
+#[tauri::command]
+pub fn delete_conversation(id: String) -> Result<(), String> {
+    let mut list = read_conversations();
+    list.retain(|c| c.id != id);
+    write_conversations(&list)
 }
 
 // ---------------- 流式对话 ----------------

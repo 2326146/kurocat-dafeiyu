@@ -176,3 +176,154 @@
   opacity: 0.55;
   font-style: italic;
 }
+
+/* ===== 会话抽屉 ===== */
+
+.chat-hotzone {
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 10px;
+  z-index: 5;
+}
+
+.chat-drawer-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(30, 40, 70, 0.16);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+  z-index: 20;
+}
+
+.chat-drawer-mask.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.chat-drawer {
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 196px;
+  display: flex;
+  flex-direction: column;
+  background: #fdfdff;
+  border-right: 1px solid #cfd6e6;
+  box-shadow: 6px 0 18px rgba(38, 54, 96, 0.16);
+  transform: translateX(-100%);
+  transition: transform 0.22s cubic-bezier(0.22, 0.61, 0.36, 1);
+  z-index: 30;
+}
+
+.chat-drawer.open {
+  transform: translateX(0);
+}
+
+.drawer-head {
+  flex: 0 0 auto;
+  padding: 12px 12px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #7b85a3;
+  letter-spacing: 0.06em;
+}
+
+.drawer-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 6px 8px;
+}
+
+.drawer-item {
+  position: relative;
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 22px 8px 9px;
+  margin-bottom: 2px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.drawer-item:hover {
+  background: #eef2fa;
+}
+
+.drawer-item.active {
+  background: #e4ebfb;
+}
+
+.drawer-item-title {
+  display: block;
+  font-size: 12px;
+  color: #2b3350;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.drawer-item-time {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+  color: #9aa3bd;
+}
+
+.drawer-item-del {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: #9aa3bd;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.drawer-item:hover .drawer-item-del {
+  opacity: 1;
+}
+
+.drawer-item-del:hover {
+  background: #ffe1e1;
+  color: #c33;
+}
+
+.drawer-empty {
+  padding: 10px 9px;
+  font-size: 11px;
+  color: #9aa3bd;
+}
+
+/* 头部图标按钮统一尺寸 */
+.chat-icon-btn {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #5b6580;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.chat-icon-btn:hover {
+  background: #eef2fa;
+}
