@@ -691,10 +691,15 @@ fn set_chat_bubble_bounds(state: State<'_, AppState>, bounds: Option<[f64; 4]>) 
 }
 
 /// 弹出聊天气泡卡片窗口（独立窗口，单例复用）。
+/// 必须与 `open_context_menu` 一样是 `async fn`。
+/// 同步命令里调用 `WebviewWindowBuilder::build()` 会卡死 Windows 的 tao 事件循环：
+/// 窗口能建出来，但 set_position / show 全部静默失效，窗口永远不可见。
 #[tauri::command]
-fn open_chat_window(app: AppHandle) -> Result<(), String> {
+async fn open_chat_window(app: AppHandle) -> Result<(), String> {
     if let Some(existing) = app.get_webview_window("chat") {
-        let _ = existing.show();
+        existing
+            .show()
+            .map_err(|e| format!("显示聊天窗失败：{e}"))?;
         let _ = existing.set_focus();
         return Ok(());
     }
@@ -722,7 +727,7 @@ fn open_chat_window(app: AppHandle) -> Result<(), String> {
     .visible(false)
     .additional_browser_args("--autoplay-policy=no-user-gesture-required")
     .build()
-    .map_err(|e| e.to_string())?;
+    .map_err(|e| format!("创建聊天窗失败：{e}"))?;
 
     // 贴着她所在窗口的右上方弹出，并夹在当前屏幕可用区域内
     if let Some(main) = app.get_webview_window("main") {
@@ -732,11 +737,12 @@ fn open_chat_window(app: AppHandle) -> Result<(), String> {
             let ch = (h * sf) as i32;
             let x = pos.x + size.width as i32 - cw;
             let y = pos.y - ch - (8.0 * sf) as i32;
-            let _ = win.set_position(tauri::PhysicalPosition::new(x, y.max(0)));
+            win.set_position(tauri::PhysicalPosition::new(x, y.max(0)))
+                .map_err(|e| format!("定位聊天窗失败：{e}"))?;
         }
     }
 
-    let _ = win.show();
+    win.show().map_err(|e| format!("显示聊天窗失败：{e}"))?;
     let _ = win.set_focus();
     Ok(())
 }

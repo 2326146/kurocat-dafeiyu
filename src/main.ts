@@ -1491,7 +1491,12 @@ if (chatBubbleEl) {
   });
   chatBubbleEl.addEventListener('click', (ev) => {
     ev.stopPropagation();
-    void invoke('open_chat_window');
+    // 开窗失败时给出可见反馈，避免又变成「点了没反应」这种无从排查的状态
+    void invoke('open_chat_window').catch((err: unknown) => {
+      console.error('打开聊天窗失败：', err);
+      chatBubbleEl.classList.add('error');
+      window.setTimeout(() => chatBubbleEl.classList.remove('error'), 1500);
+    });
   });
   window.requestAnimationFrame(tickChatBubble);
 }

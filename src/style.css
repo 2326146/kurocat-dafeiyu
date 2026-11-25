@@ -977,3 +977,15 @@ html.win7-ulw-mode .floating-side-menu {
   0%, 60%, 100% { opacity: 0.35; transform: translateY(0); }
   30% { opacity: 1; transform: translateY(-2px); }
 }
+
+.chat-bubble.error {
+  border-color: #e05a5a;
+  box-shadow: 0 0 0 2px rgba(224, 90, 90, 0.32);
+  animation: chat-bubble-shake 0.4s ease;
+}
+
+@keyframes chat-bubble-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-3px); }
+  75% { transform: translateX(3px); }
+}
