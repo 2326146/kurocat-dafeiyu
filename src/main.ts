@@ -867,7 +867,9 @@ async function bootstrap(): Promise<void> {
 
   btnToastOpenEl.addEventListener('click', (e) => {
     e.stopPropagation();
-    const url = latestUpdateInfo?.releaseUrl || 'https://github.com/qianyiai/kurocat/releases/latest';
+    // 不写死上游链接：没有 releaseUrl 就什么都不做
+    const url = latestUpdateInfo?.releaseUrl;
+    if (!url) return;
     void invoke('open_release_page', { url });
   });
 
@@ -1247,9 +1249,6 @@ async function bootstrap(): Promise<void> {
         break;
       case 'desktop-shortcut':
         void createDesktopShortcut();
-        break;
-      case 'check-update':
-        void triggerManualUpdateCheck();
         break;
       case 'open-tail-picker':
         void openTailPicker();

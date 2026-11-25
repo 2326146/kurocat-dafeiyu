@@ -590,9 +590,6 @@ async function bootstrap(): Promise<void> {
         void invoke('reset_position');
         closeMenu();
         break;
-      case 'check-update':
-        void triggerManualUpdateCheck();
-        break;
       case 'quit':
         void invoke('quit_app');
         break;

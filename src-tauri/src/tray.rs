@@ -251,13 +251,6 @@ pub fn setup_tray(app: &AppHandle, initial: &AppSettings) -> tauri::Result<()> {
             ],
         )?
     };
-    let check_update = MenuItem::with_id(
-        app,
-        "check_update",
-        format!("检查更新 (v{})", crate::updater::CURRENT_VERSION),
-        true,
-        None::<&str>,
-    )?;
     let quit = MenuItem::with_id(app, "quit", "退出 KuroCat", true, None::<&str>)?;
 
     let sep1 = PredefinedMenuItem::separator(app)?;
@@ -286,7 +279,6 @@ pub fn setup_tray(app: &AppHandle, initial: &AppSettings) -> tauri::Result<()> {
             &autostart,
             &obs_menu,
             &mcp_toggle,
-            &check_update,
             &sep2,
             &quit,
         ],
@@ -314,7 +306,6 @@ pub fn setup_tray(app: &AppHandle, initial: &AppSettings) -> tauri::Result<()> {
             &autostart,
             &obs_menu,
             &mcp_toggle,
-            &check_update,
             &sep2,
             &quit,
         ],
@@ -340,7 +331,6 @@ pub fn setup_tray(app: &AppHandle, initial: &AppSettings) -> tauri::Result<()> {
             &autostart,
             &obs_menu,
             &mcp_toggle,
-            &check_update,
             &sep2,
             &quit,
         ],
