@@ -70,6 +70,18 @@ npm run tauri:build -- --bundles app
 
 产物在 `src-tauri/target/release/bundle/macos/KuroCat.app`。
 
+## 常见构建问题
+
+**`npm ci` 之后 `vite` 报找不到 esbuild 二进制**
+
+npm 11/12 默认拦截依赖的安装脚本，esbuild 的二进制不会被下载。补一行：
+
+```bash
+node node_modules/esbuild/install.js
+```
+
+（CI 里用的是 Node 20 自带的 npm 10，不受影响。）
+
 ## 发布
 
 推一个 `v*` 标签（或手动触发 Actions），`.github/workflows/build-release.yml` 会在

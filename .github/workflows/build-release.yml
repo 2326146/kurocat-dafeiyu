@@ -37,8 +37,11 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
+
+      # rustup 不接受空的 target 参数，Windows 那一路要跳过这一步
+      - name: Add macOS target
+        if: matrix.target != ''
+        run: rustup target add ${{ matrix.target }}
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
