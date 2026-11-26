@@ -729,15 +729,35 @@ async fn open_chat_window(app: AppHandle) -> Result<(), String> {
     .build()
     .map_err(|e| format!("创建聊天窗失败：{e}"))?;
 
-    // 贴着她所在窗口的右上方弹出，并夹在当前屏幕可用区域内
+    // 贴着她所在窗口的右上方弹出，然后整个夹进当前屏幕里
     if let Some(main) = app.get_webview_window("main") {
         if let (Ok(pos), Ok(size)) = (main.outer_position(), main.outer_size()) {
             let sf = main.scale_factor().unwrap_or(1.0);
             let cw = (w * sf) as i32;
             let ch = (h * sf) as i32;
-            let x = pos.x + size.width as i32 - cw;
-            let y = pos.y - ch - (8.0 * sf) as i32;
-            win.set_position(tauri::PhysicalPosition::new(x, y.max(0)))
+            let mut x = pos.x + size.width as i32 - cw;
+            let mut y = pos.y - ch - (8.0 * sf) as i32;
+
+            // 以前这里只做了 y.max(0)，注释说"夹在屏幕内"其实没有。
+            // 她站在屏幕右边时，聊天窗会跟着整块透明窗口飞出去。
+            if let Ok(Some(mon)) = main.current_monitor() {
+                let mp = mon.position();
+                let ms = mon.size();
+                // 顶部留出菜单栏/任务栏的高度
+                let top_pad = (40.0 * sf) as i32;
+                let margin = (8.0 * sf) as i32;
+                let min_x = mp.x + margin;
+                let max_x = mp.x + ms.width as i32 - cw - margin;
+                let min_y = mp.y + top_pad;
+                let max_y = mp.y + ms.height as i32 - ch - margin;
+                // 显示器比窗口还小时，clamp 的上下界会颠倒，这里先取正常顺序
+                x = x.clamp(min_x.min(max_x), max_x.max(min_x));
+                y = y.clamp(min_y.min(max_y), max_y.max(min_y));
+            } else {
+                y = y.max(0);
+            }
+
+            win.set_position(tauri::PhysicalPosition::new(x, y))
                 .map_err(|e| format!("定位聊天窗失败：{e}"))?;
         }
     }
