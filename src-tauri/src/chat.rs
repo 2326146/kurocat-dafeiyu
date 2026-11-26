@@ -24,6 +24,10 @@ pub struct ProviderConfig {
     pub key: String,
     #[serde(default)]
     pub temperature: Option<f64>,
+    /// 思考模式："enabled" | "disabled"。不填则用 API 默认（开启）。
+    /// DeepSeek 默认开启思考且 effort=high，桌宠场景会导致回话明显变慢。
+    #[serde(default)]
+    pub thinking: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -77,10 +81,11 @@ const TEMPLATE: &str = r#"{
     {
       "id": "deepseek",
       "name": "DeepSeek",
-      "model": "deepseek-chat",
+      "model": "deepseek-v4-pro",
       "endpoint": "https://api.deepseek.com/chat/completions",
       "key": "",
-      "temperature": 0.8
+      "temperature": 0.8,
+      "thinking": "disabled"
     },
     {
       "id": "openai",
@@ -284,12 +289,15 @@ pub fn send_chat_stream(
 ) -> Result<(), String> {
     let p = resolve_provider(&provider_id)?;
 
-    let body = serde_json::json!({
+    let mut body = serde_json::json!({
         "model": p.model,
         "messages": messages,
         "temperature": p.temperature.unwrap_or(0.8),
         "stream": true,
     });
+    if let Some(t) = p.thinking.as_deref() {
+        body["thinking"] = serde_json::json!({ "type": t });
+    }
     let payload = serde_json::to_vec(&body).map_err(|e| e.to_string())?;
 
     let mut child = Command::new("curl")
@@ -443,12 +451,15 @@ fn extract_delta(payload: &str) -> Option<String> {
 pub fn send_chat(provider_id: String, messages: Vec<ChatMessage>) -> Result<String, String> {
     let p = resolve_provider(&provider_id)?;
 
-    let body = serde_json::json!({
+    let mut body = serde_json::json!({
         "model": p.model,
         "messages": messages,
         "temperature": p.temperature.unwrap_or(0.8),
         "stream": false,
     });
+    if let Some(t) = p.thinking.as_deref() {
+        body["thinking"] = serde_json::json!({ "type": t });
+    }
     let payload = serde_json::to_vec(&body).map_err(|e| e.to_string())?;
 
     let mut child = Command::new("curl")
@@ -507,4 +518,72 @@ pub fn send_chat(provider_id: String, messages: Vec<ChatMessage>) -> Result<Stri
         .ok_or_else(|| format!("返回里没有回复内容：{}", &stdout[..stdout.len().min(300)]))?;
 
     Ok(content.trim().to_string())
+}
+
+// ---------------- 「深入」与导出 ----------------
+
+fn downloads_dir() -> PathBuf {
+    if cfg!(target_os = "macos") {
+        if let Ok(home) = std::env::var("HOME") {
+            return PathBuf::from(home).join("Downloads");
+        }
+    }
+    if cfg!(windows) {
+        if let Ok(profile) = std::env::var("USERPROFILE") {
+            return PathBuf::from(profile).join("Downloads");
+        }
+    }
+    crate::config::app_data_dir()
+}
+
+/// 把一段对话导出成 Markdown 文件，放在下载文件夹，返回完整路径。
+#[tauri::command]
+pub fn export_conversation(title: String, messages: Vec<ChatMessage>) -> Result<String, String> {
+    let dir = downloads_dir();
+    let _ = std::fs::create_dir_all(&dir);
+
+    let stamp = now_millis();
+    let safe: String = title
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .take(24)
+        .collect();
+    let name = format!("大肥鱼对话-{}-{}.md", if safe.is_empty() { "未命名" } else { &safe }, stamp);
+    let path = dir.join(&name);
+
+    let mut md = String::new();
+    md.push_str(&format!("# 大肥鱼对话 · {}\n\n", title));
+    md.push_str(&format!("导出时间：{}（Unix {}）\n\n---\n\n", now_millis(), stamp));
+    for m in &messages {
+        let who = match m.role.as_str() {
+            "user" => "我",
+            "assistant" => "大肥鱼",
+            _ => &m.role,
+        };
+        md.push_str(&format!("**{}**\n\n{}\n\n---\n\n", who, m.content));
+    }
+    md.push_str("\n> 由 KuroCat 大肥鱼自定义版导出\n");
+
+    std::fs::write(&path, md).map_err(|e| format!("写入失败：{e}"))?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+/// 把文本写进系统剪贴板（macOS 用 pbcopy，Windows 用 clip）。
+#[tauri::command]
+pub fn copy_text(text: String) -> Result<(), String> {
+    use std::io::Write;
+    let bin = if cfg!(target_os = "macos") { "pbcopy" } else { "clip" };
+    let mut child = Command::new(bin)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| format!("无法调用 {bin}：{e}"))?;
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(text.as_bytes())
+            .map_err(|e| format!("写入剪贴板失败：{e}"))?;
+    }
+    child.wait().map_err(|e| format!("{bin} 执行失败：{e}"))?;
+    Ok(())
 }

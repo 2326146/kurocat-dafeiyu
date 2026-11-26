@@ -2574,6 +2574,8 @@ pub fn run() {
             chat::list_conversations,
             chat::save_conversation,
             chat::delete_conversation,
+            chat::export_conversation,
+            chat::copy_text,
             save_tail_picker_selection,
             set_dragging,
             start_pet_drag,

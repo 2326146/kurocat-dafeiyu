@@ -361,6 +361,10 @@ function finishRequest(finalText: string | null, errorText: string | null): void
   }
   persistConversation();
 
+  if (bubble && errorText === null) {
+    addActions(bubble, finalText ?? '');
+  }
+
   activeText = '';
   sending = false;
   sendEl.disabled = false;
@@ -412,6 +416,79 @@ async function send(): Promise<void> {
   } catch (err) {
     finishRequest(null, String(err));
   }
+}
+
+// ---------- 「深入」与导出 ----------
+
+let toastEl: HTMLDivElement | null = null;
+let toastTimer: number | null = null;
+
+function showToast(msg: string): void {
+  if (!toastEl) {
+    toastEl = document.createElement('div');
+    toastEl.className = 'chat-toast';
+    document.body.appendChild(toastEl);
+  }
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  if (toastTimer !== null) window.clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => {
+    toastEl?.classList.remove('show');
+    toastTimer = null;
+  }, 3200);
+}
+
+async function goDeeper(): Promise<void> {
+  const turns = history.slice(-6);
+  if (turns.length === 0) return;
+  const body = turns
+    .map((t) => (t.role === 'user' ? '我' : '大肥鱼') + '：' + t.content)
+    .join('\n\n');
+  const payload = '以下是我和桌宠的对话，请帮我更深入地展开：\n\n' + body;
+  try {
+    await invoke('copy_text', { text: payload });
+    await invoke('open_release_page', { url: 'https://chat.deepseek.com/' });
+    showToast('对话已复制，粘到输入框即可');
+  } catch (err) {
+    showToast('操作失败：' + String(err));
+  }
+}
+
+async function exportConversation(): Promise<void> {
+  if (history.length === 0) return;
+  try {
+    const path = await invoke<string>('export_conversation', {
+      title: currentTitle || '对话',
+      messages: history,
+    });
+    showToast('已导出到下载文件夹：' + (path.split('/').pop() ?? path));
+  } catch (err) {
+    showToast('导出失败：' + String(err));
+  }
+}
+
+function addActions(bubble: HTMLDivElement, text: string): void {
+  // 只有长回答才给「深入」，短回答加了也是噪音
+  if (Array.from(text).length < 200) return;
+  const row = document.createElement('div');
+  row.className = 'chat-actions';
+
+  const deep = document.createElement('button');
+  deep.type = 'button';
+  deep.className = 'chat-action';
+  deep.textContent = '🔍 深入';
+  deep.title = '复制这段对话，并打开 DeepSeek 网页版继续';
+  deep.addEventListener('click', () => void goDeeper());
+
+  const exp = document.createElement('button');
+  exp.type = 'button';
+  exp.className = 'chat-action';
+  exp.textContent = '📄 导出对话';
+  exp.title = '导出成 Markdown 文件，可以拖进网页版当附件';
+  exp.addEventListener('click', () => void exportConversation());
+
+  row.append(deep, exp);
+  bubble.insertAdjacentElement('afterend', row);
 }
 
 // ---------- 流式事件 ----------
