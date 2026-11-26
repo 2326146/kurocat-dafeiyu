@@ -800,6 +800,10 @@ fn install_chat_follow(app: AppHandle) {
         let Some((ox, oy)) = offset else {
             return;
         };
+        // 防御：偏移不可能超过几块屏幕，离谱就说明锚点算错了，宁可不跟
+        if ox.abs() > 6000 || oy.abs() > 6000 {
+            return;
+        }
         let Some(chat) = app_ev.get_webview_window("chat") else {
             return;
         };
@@ -863,6 +867,9 @@ async fn open_chat_window(app: AppHandle) -> Result<(), String> {
     .build()
     .map_err(|e| format!("创建聊天窗失败：{e}"))?;
 
+    // 用来算跟随偏移的锚点：用「我们想放的位置」，不要事后回读
+    let mut placed: Option<(i32, i32)> = None;
+
     // 贴着她所在窗口的右上方弹出，然后整个夹进当前屏幕里
     if let Some(main) = app.get_webview_window("main") {
         if let (Ok(pos), Ok(size)) = (main.outer_position(), main.outer_size()) {
@@ -893,14 +900,17 @@ async fn open_chat_window(app: AppHandle) -> Result<(), String> {
 
             win.set_position(tauri::PhysicalPosition::new(x, y))
                 .map_err(|e| format!("定位聊天窗失败：{e}"))?;
+            placed = Some((x, y));
         }
     }
 
     attach_chat_move_hook(&win);
-    if let Some(main) = app.get_webview_window("main") {
-        if let Ok(mp) = main.outer_position() {
-            if let Ok(cp) = win.outer_position() {
-                remember_chat_anchor(&win, (mp.x, mp.y), (cp.x, cp.y));
+    // 之前这里用 win.outer_position() 回读，但 set_position 还没生效，
+    // 读到的是系统默认的 (32,32)，偏移被算成巨大负数 —— 一拖桌宠聊天窗就飞左上角。
+    if let Some(p) = placed {
+        if let Some(main) = app.get_webview_window("main") {
+            if let Ok(mp) = main.outer_position() {
+                remember_chat_anchor(&win, (mp.x, mp.y), p);
             }
         }
     }
