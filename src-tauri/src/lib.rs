@@ -694,8 +694,26 @@ fn set_chat_bubble_bounds(state: State<'_, AppState>, bounds: Option<[f64; 4]>) 
 
 // ---------------- 聊天窗跟随桌宠 ----------------
 
-static LAST_PET_POS: std::sync::OnceLock<std::sync::Mutex<Option<(i32, i32)>>> =
+#[derive(Default)]
+struct ChatFollowState {
+    /// 聊天窗相对桌宠的偏移 (chat - pet)
+    offset: Option<(i32, i32)>,
+    /// 我们自己最后一次设过去的位置，用来区分「程序移动」和「用户拖动」
+    last_set: Option<(i32, i32)>,
+    pet_pos: Option<(i32, i32)>,
+    /// 聊天窗的活动范围 (min_x, max_x, min_y, max_y)，打开时算一次，
+    /// 跟随过程中只做纯算术，不去问系统要显示器信息（否则每次移动三趟 IPC，很卡）。
+    bounds: Option<(i32, i32, i32, i32)>,
+}
+
+static CHAT_FOLLOW: std::sync::OnceLock<std::sync::Mutex<ChatFollowState>> =
     std::sync::OnceLock::new();
+static CHAT_MOVE_HOOKED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+fn chat_follow_state() -> &'static std::sync::Mutex<ChatFollowState> {
+    CHAT_FOLLOW.get_or_init(|| std::sync::Mutex::new(ChatFollowState::default()))
+}
 
 /// 把窗口位置夹进它所在显示器的可见范围内。显示器比窗口还小时先保证不 panic。
 fn clamp_window_to_monitor(win: &tauri::WebviewWindow, x: i32, y: i32) -> (i32, i32) {
@@ -713,13 +731,57 @@ fn clamp_window_to_monitor(win: &tauri::WebviewWindow, x: i32, y: i32) -> (i32, 
     let min_y = mp.y + margin;
     let max_y = mp.y + ms.height as i32 - size.height as i32 - margin;
     (
-        x.clamp(min_x.min(max_x), max_x.max(min_x)),
-        y.clamp(min_y.min(max_y), max_y.max(min_y)),
+        x.clamp(min_x.min(max_x), max_x.min(min_x)),
+        y.clamp(min_y.min(max_y), max_y.min(min_y)),
     )
 }
 
-/// 桌宠移动时，聊天窗按「位移增量」跟着走。
-/// 用增量而不是固定偏移，用户手动把聊天窗拖到别处后，相对位置自然保留。
+/// 聊天窗打开或重新定位后调用：记下新的偏移、活动范围，并清掉待消费的 last_set。
+fn remember_chat_anchor(chat: &tauri::WebviewWindow, pet: (i32, i32), chat_pos: (i32, i32)) {
+    let bounds = match (chat.current_monitor(), chat.outer_size()) {
+        (Ok(Some(mon)), Ok(size)) => {
+            let mp = mon.position();
+            let ms = mon.size();
+            let margin = 8;
+            Some((
+                mp.x + margin,
+                mp.x + ms.width as i32 - size.width as i32 - margin,
+                mp.y + margin,
+                mp.y + ms.height as i32 - size.height as i32 - margin,
+            ))
+        }
+        _ => None,
+    };
+    let mut st = chat_follow_state().lock().unwrap();
+    st.offset = Some((chat_pos.0 - pet.0, chat_pos.1 - pet.1));
+    st.pet_pos = Some(pet);
+    st.last_set = Some(chat_pos);
+    st.bounds = bounds;
+}
+
+/// 聊天窗自己的 Moved 事件：用户拖动、或前端调整高度时，更新偏移。
+fn attach_chat_move_hook(chat: &tauri::WebviewWindow) {
+    if CHAT_MOVE_HOOKED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
+    chat.on_window_event(move |event| {
+        let tauri::WindowEvent::Moved(pos) = event else {
+            return;
+        };
+        let mut st = chat_follow_state().lock().unwrap();
+        if st.last_set == Some((pos.x, pos.y)) {
+            // 是我们自己设的，消费掉，别当成用户拖动
+            st.last_set = None;
+            return;
+        }
+        if let Some((px, py)) = st.pet_pos {
+            st.offset = Some((pos.x - px, pos.y - py));
+        }
+    });
+}
+
+/// 桌宠移动时按固定偏移把聊天窗带过去。
+/// 用偏移而不是增量：被屏幕边界夹住时只是这次没跟上，她一走回来就自动归位，不会累积下沉。
 fn install_chat_follow(app: AppHandle) {
     let Some(main) = app.get_webview_window("main") else {
         return;
@@ -729,29 +791,31 @@ fn install_chat_follow(app: AppHandle) {
         let tauri::WindowEvent::Moved(pos) = event else {
             return;
         };
-        let store = LAST_PET_POS.get_or_init(|| std::sync::Mutex::new(None));
-        let (had_prev, dx, dy) = {
-            let mut last = store.lock().unwrap();
-            let prev = *last;
-            *last = Some((pos.x, pos.y));
-            match prev {
-                Some((px, py)) => (true, pos.x - px, pos.y - py),
-                None => (false, 0, 0),
-            }
+        let pet = (pos.x, pos.y);
+        let (offset, bounds) = {
+            let mut st = chat_follow_state().lock().unwrap();
+            st.pet_pos = Some(pet);
+            (st.offset, st.bounds)
         };
-        if !had_prev || (dx == 0 && dy == 0) {
+        let Some((ox, oy)) = offset else {
             return;
-        }
+        };
         let Some(chat) = app_ev.get_webview_window("chat") else {
             return;
         };
         if !chat.is_visible().unwrap_or(false) {
             return;
         }
-        let Ok(cp) = chat.outer_position() else {
-            return;
-        };
-        let (x, y) = clamp_window_to_monitor(&chat, cp.x + dx, cp.y + dy);
+        let mut x = pet.0 + ox;
+        let mut y = pet.1 + oy;
+        if let Some((min_x, max_x, min_y, max_y)) = bounds {
+            x = x.clamp(min_x.min(max_x), max_x.min(min_x));
+            y = y.clamp(min_y.min(max_y), max_y.min(min_y));
+        }
+        {
+            let mut st = chat_follow_state().lock().unwrap();
+            st.last_set = Some((x, y));
+        }
         let _ = chat.set_position(tauri::PhysicalPosition::new(x, y));
     });
 }
@@ -765,6 +829,12 @@ async fn open_chat_window(app: AppHandle) -> Result<(), String> {
             .show()
             .map_err(|e| format!("显示聊天窗失败：{e}"))?;
         let _ = existing.set_focus();
+        attach_chat_move_hook(&existing);
+        if let Some(main) = app.get_webview_window("main") {
+            if let (Ok(mp), Ok(cp)) = (main.outer_position(), existing.outer_position()) {
+                remember_chat_anchor(&existing, (mp.x, mp.y), (cp.x, cp.y));
+            }
+        }
         return Ok(());
     }
 
@@ -823,6 +893,15 @@ async fn open_chat_window(app: AppHandle) -> Result<(), String> {
 
             win.set_position(tauri::PhysicalPosition::new(x, y))
                 .map_err(|e| format!("定位聊天窗失败：{e}"))?;
+        }
+    }
+
+    attach_chat_move_hook(&win);
+    if let Some(main) = app.get_webview_window("main") {
+        if let Ok(mp) = main.outer_position() {
+            if let Ok(cp) = win.outer_position() {
+                remember_chat_anchor(&win, (mp.x, mp.y), (cp.x, cp.y));
+            }
         }
     }
 
