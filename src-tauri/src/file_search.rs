@@ -77,6 +77,8 @@ pub fn find_files(query: String) -> Result<Vec<FileHit>, String> {
         .collect();
     let expr = clauses.join(" && ");
 
+    crate::chat_follow::log_search(&format!("search tokens={:?} expr={}", toks, expr));
+
     let out = Command::new("mdfind")
         .arg(&expr)
         .output()
@@ -108,7 +110,9 @@ pub fn find_files(query: String) -> Result<Vec<FileHit>, String> {
         (not_exact, sys_dir, h.name.chars().count())
     });
     hits.dedup_by(|a, b| a.path == b.path);
+    let total = hits.len();
     hits.truncate(MAX_HITS);
+    crate::chat_follow::log_search(&format!("search result lines={} kept={}", total, hits.len()));
     Ok(hits)
 }
 
@@ -127,5 +131,43 @@ pub fn reveal_path(path: String) -> Result<(), String> {
         Ok(())
     } else {
         Err("访达打开失败".into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tokenize_chinese_splits_per_char() {
+        assert_eq!(tokenize("兔采购"), vec!["兔", "采", "购"]);
+    }
+
+    #[test]
+    fn tokenize_mixed() {
+        assert_eq!(tokenize("bmmncs 采购"), vec!["bmmncs", "采", "购"]);
+    }
+
+    #[test]
+    fn tokenize_spaces_ignored() {
+        assert_eq!(tokenize("  兔  采购 "), vec!["兔", "采", "购"]);
+    }
+
+    #[test]
+    fn tokenize_empty() {
+        assert!(tokenize("   ").is_empty());
+    }
+
+    #[test]
+    fn query_is_anded() {
+        let toks = tokenize("兔采购");
+        let clauses: Vec<String> = toks
+            .iter()
+            .map(|t| format!("kMDItemFSName == \"*{}*\"cd", escapes(t)))
+            .collect();
+        assert_eq!(
+            clauses.join(" && "),
+            "kMDItemFSName == \"*兔*\"cd && kMDItemFSName == \"*采*\"cd && kMDItemFSName == \"*购*\"cd"
+        );
     }
 }

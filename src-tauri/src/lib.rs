@@ -2531,6 +2531,7 @@ pub fn run() {
             );
             start_storage_watcher(handle.clone());
             chat_follow::install(handle.clone());
+            chat_follow::log_startup();
             updater::start_background_update_checker(handle.clone());
 
             let http_handle = handle.clone();

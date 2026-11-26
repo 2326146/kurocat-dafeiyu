@@ -21,6 +21,10 @@ fn state() -> &'static std::sync::Mutex<ChatFollowState> {
 }
 
 /// 追加一行跟随日志，超过 200KB 就重开，避免无限增长。
+pub(crate) fn log_search(msg: &str) {
+    log_line(msg);
+}
+
 fn log_line(msg: &str) {
     let dir = crate::config::app_data_dir();
     let _ = std::fs::create_dir_all(&dir);
@@ -132,4 +136,23 @@ pub fn sync_offset_from_frontend(app: AppHandle) {
 /// 开窗后由 lib.rs 写入初始偏移。
 pub(crate) fn set_offset(offset: (i32, i32)) {
     state().lock().unwrap().offset = Some(offset);
+}
+
+/// 启动时记录「当前运行的二进制是哪一次编译的」。
+/// 之前多次因为「改了代码但跑的还是旧进程」白折腾，这一行可以一锤定音。
+pub(crate) fn log_startup() {
+    let exe = std::env::current_exe().ok();
+    let meta = exe.as_ref().and_then(|p| std::fs::metadata(p).ok());
+    let mtime = meta
+        .as_ref()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    log_line(&format!(
+        "==== start pid={} exe_mtime_unix={} exe={}",
+        std::process::id(),
+        mtime,
+        exe.map(|p| p.to_string_lossy().to_string()).unwrap_or_default()
+    ));
 }
