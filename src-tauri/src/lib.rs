@@ -792,24 +792,45 @@ fn install_chat_follow(app: AppHandle) {
             return;
         };
         let pet = (pos.x, pos.y);
-        let (offset, bounds) = {
+        let Some(chat) = app_ev.get_webview_window("chat") else {
+            chat_follow_state().lock().unwrap().pet_pos = Some(pet);
+            return;
+        };
+        if !chat.is_visible().unwrap_or(false) {
+            let mut st = chat_follow_state().lock().unwrap();
+            st.pet_pos = Some(pet);
+            // 不可见时锚点失效，下次显示重新算
+            st.offset = None;
+            return;
+        }
+
+        let (stored, bounds) = {
             let mut st = chat_follow_state().lock().unwrap();
             st.pet_pos = Some(pet);
             (st.offset, st.bounds)
         };
+
+        // 自愈：偏移不存在或离谱时，用聊天窗此刻的真实位置重算一次。
+        // 这样即使 open_chat_window 里算错了锚点，拖第一下就会自动纠正。
+        let mut offset = stored;
+        let suspicious = match offset {
+            None => true,
+            Some((ox, oy)) => ox.abs() > 4000 || oy.abs() > 4000,
+        };
+        if suspicious {
+            match chat.outer_position() {
+                Ok(cp) => {
+                    let fixed = (cp.x - pet.0, cp.y - pet.1);
+                    let mut st = chat_follow_state().lock().unwrap();
+                    st.offset = Some(fixed);
+                    offset = Some(fixed);
+                }
+                Err(_) => return,
+            }
+        }
         let Some((ox, oy)) = offset else {
             return;
         };
-        // 防御：偏移不可能超过几块屏幕，离谱就说明锚点算错了，宁可不跟
-        if ox.abs() > 6000 || oy.abs() > 6000 {
-            return;
-        }
-        let Some(chat) = app_ev.get_webview_window("chat") else {
-            return;
-        };
-        if !chat.is_visible().unwrap_or(false) {
-            return;
-        }
         let mut x = pet.0 + ox;
         let mut y = pet.1 + oy;
         if let Some((min_x, max_x, min_y, max_y)) = bounds {
