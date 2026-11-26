@@ -119,7 +119,7 @@ interface FileHit {
 
 /** 命中「找 xxx」「查找 xxx」「搜索 xxx」时返回关键词，否则 null */
 function parseFindCommand(raw: string): string | null {
-  const m = raw.match(/^\s*(?:找|查找|搜索)\s*(.+)$/);
+  const m = raw.match(/^\s*(?:帮我|帮忙)?\s*(?:找|查找|搜索)\s*(.+)$/);
   if (!m) return null;
   const q = m[1].trim();
   return q.length > 0 ? q : null;
@@ -634,7 +634,7 @@ inputEl.addEventListener('keydown', (ev) => {
   if (ev.isComposing || ev.keyCode === 229) return;
   if (ev.key === 'Enter' && !ev.shiftKey) {
     ev.preventDefault();
-    void send();
+    void handleSubmit();
     return;
   }
   if (ev.key === 'Escape') {
