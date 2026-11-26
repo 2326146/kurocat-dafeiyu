@@ -78,7 +78,43 @@ pub fn find_files(query: String) -> Result<Vec<FileHit>, String> {
     let expr = clauses.join(" && ");
 
     crate::chat_follow::log_search(&format!("search tokens={:?} expr={}", toks, expr));
+    crate::chat_follow::log_search(&format!(
+        "search env LANG={:?} LC_ALL={:?} LC_CTYPE={:?} PATH={:?}",
+        std::env::var("LANG").ok(),
+        std::env::var("LC_ALL").ok(),
+        std::env::var("LC_CTYPE").ok(),
+        std::env::var("PATH").ok()
+    ));
 
+    let run = |args: &[&str]| -> (bool, usize, String) {
+        match Command::new("mdfind").args(args).output() {
+            Ok(o) => (
+                o.status.success(),
+                o.stdout.len(),
+                String::from_utf8_lossy(&o.stderr).trim().to_string(),
+            ),
+            Err(e) => (false, 0, format!("spawn error: {e}")),
+        }
+    };
+
+    // 先按分词 AND 查
+    let (ok, len, err) = run(&[expr.as_str()]);
+    crate::chat_follow::log_search(&format!(
+        "mdfind expr ok={} stdout_bytes={} stderr={:?}",
+        ok, len, err
+    ));
+    if !ok {
+        return Err(format!("mdfind 执行失败：{err}"));
+    }
+
+    // 再试一次「把整串当一个词」的 -name 查询，作为对照
+    let (ok2, len2, err2) = run(&["-name", q]);
+    crate::chat_follow::log_search(&format!(
+        "mdfind -name ok={} stdout_bytes={} stderr={:?}",
+        ok2, len2, err2
+    ));
+
+    // 真正用的是分词查询，重新执行一次拿输出
     let out = Command::new("mdfind")
         .arg(&expr)
         .output()
