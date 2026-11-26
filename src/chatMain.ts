@@ -109,6 +109,73 @@ function appendMessage(role: 'user' | 'bot', text: string, pending = false): HTM
   return el;
 }
 
+// ---------- 本地文件查找（不经过模型） ----------
+
+interface FileHit {
+  name: string;
+  path: string;
+  isDir: boolean;
+}
+
+/** 命中「找 xxx」「查找 xxx」「搜索 xxx」时返回关键词，否则 null */
+function parseFindCommand(raw: string): string | null {
+  const m = raw.match(/^\s*(?:找|查找|搜索)\s*(.+)$/);
+  if (!m) return null;
+  const q = m[1].trim();
+  return q.length > 0 ? q : null;
+}
+
+async function runFindCommand(query: string): Promise<void> {
+  appendMessage('user', '找 ' + query);
+  const pendingEl = appendMessage('bot', '正在找…', true);
+  try {
+    const hits = await invoke<FileHit[]>('find_files', { query });
+    pendingEl.remove();
+    if (hits.length === 0) {
+      appendMessage('bot', '没找到名字里有「' + query + '」的东西 (｡•́︿•̀｡)');
+      return;
+    }
+    appendMessage('bot', '找到 ' + hits.length + ' 个：');
+    const box = document.createElement('div');
+    box.className = 'chat-files';
+    for (const h of hits) {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'chat-file';
+      const label = document.createElement('span');
+      label.className = 'chat-file-name';
+      label.textContent = (h.isDir ? '📁 ' : '📄 ') + h.name;
+      const pth = document.createElement('span');
+      pth.className = 'chat-file-path';
+      pth.textContent = h.path.replace(/\/Users\/[^/]+\//, '~/');
+      row.append(label, pth);
+      row.title = '在访达中显示';
+      row.addEventListener('click', () => {
+        void invoke('reveal_path', { path: h.path }).catch((e) => showToast('打不开：' + String(e)));
+      });
+      box.appendChild(row);
+    }
+    logEl.appendChild(box);
+    while (logEl.childElementCount > MAX_RENDERED) logEl.removeChild(logEl.firstElementChild!);
+    scheduleFit(true);
+  } catch (err) {
+    pendingEl.remove();
+    appendMessage('bot', '查找失败：' + String(err));
+  }
+}
+
+async function handleSubmit(): Promise<void> {
+  const raw = inputEl.value;
+  const q = parseFindCommand(raw);
+  if (q) {
+    inputEl.value = '';
+    autoGrow();
+    await runFindCommand(q);
+    return;
+  }
+  await send();
+}
+
 async function fitHeight(scrollToBottom: boolean): Promise<void> {
   if (fitting) {
     pendingFit = true;
@@ -579,7 +646,7 @@ inputEl.addEventListener('keydown', (ev) => {
 
 formEl.addEventListener('submit', (ev) => {
   ev.preventDefault();
-  void send();
+  void handleSubmit();
 });
 
 collapseEl.addEventListener('click', () => hideWindow());

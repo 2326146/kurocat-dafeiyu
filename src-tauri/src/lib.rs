@@ -4,6 +4,7 @@ mod audio_monitor;
 mod cats;
 mod chat;
 mod chat_follow;
+mod file_search;
 mod config;
 mod game_detect;
 mod input_hook;
@@ -2621,6 +2622,8 @@ pub fn run() {
             chat::export_conversation,
             chat::copy_text,
             chat_follow::sync_offset_from_frontend,
+            file_search::find_files,
+            file_search::reveal_path,
             save_tail_picker_selection,
             set_dragging,
             start_pet_drag,

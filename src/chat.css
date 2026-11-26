@@ -426,3 +426,52 @@
 .chat-head:active {
   cursor: grabbing;
 }
+
+/* 本地查找结果 */
+.chat-files {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 2px 0 3px 2px;
+}
+
+.chat-file {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 4px 8px;
+  border: 1px solid #e2e7f2;
+  border-radius: 8px;
+  background: #fbfcff;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.chat-file:hover {
+  background: #eef2fa;
+  border-color: #b9c6e3;
+}
+
+.chat-file-name {
+  font-size: 12px;
+  color: #2b3350;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-file-path {
+  font-size: 10px;
+  color: #8d97b3;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
