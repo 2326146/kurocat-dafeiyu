@@ -132,7 +132,14 @@ async function runFindCommand(query: string): Promise<void> {
     const hits = await invoke<FileHit[]>('find_files', { query });
     pendingEl.remove();
     if (hits.length === 0) {
-      appendMessage('bot', '没找到名字里有「' + query + '」的东西 (｡•́︿•̀｡)');
+      appendMessage(
+        'bot',
+        '没找到名字里有「' +
+          query +
+          '」的东西 (｡•́︿•̀｡)\n\n' +
+          '如果确定有，多半是没开「完全磁盘访问权限」——' +
+          '系统设置 → 隐私与安全性 → 完全磁盘访问权限，把 KuroCat 勾上再重启。',
+      );
       return;
     }
     appendMessage('bot', '找到 ' + hits.length + ' 个：');
