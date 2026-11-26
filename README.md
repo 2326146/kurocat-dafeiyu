@@ -150,3 +150,5 @@ macOS（Intel + Apple Silicon）和 Windows 上各构建安装包，并挂到 Dr
 [MIT](./LICENSE)，沿用上游协议。
 
 原版说明已留档：[README-upstream.md](./README-upstream.md)
+
+版本历史见 [CHANGELOG.md](./CHANGELOG.md)。
