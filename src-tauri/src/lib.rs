@@ -3,6 +3,7 @@
 mod audio_monitor;
 mod cats;
 mod chat;
+mod chat_follow;
 mod config;
 mod game_detect;
 mod input_hook;
@@ -692,158 +693,6 @@ fn set_chat_bubble_bounds(state: State<'_, AppState>, bounds: Option<[f64; 4]>) 
 
 /// 弹出聊天气泡卡片窗口（独立窗口，单例复用）。
 
-// ---------------- 聊天窗跟随桌宠 ----------------
-
-#[derive(Default)]
-struct ChatFollowState {
-    /// 聊天窗相对桌宠的偏移 (chat - pet)
-    offset: Option<(i32, i32)>,
-    /// 我们自己最后一次设过去的位置，用来区分「程序移动」和「用户拖动」
-    last_set: Option<(i32, i32)>,
-    pet_pos: Option<(i32, i32)>,
-    /// 聊天窗的活动范围 (min_x, max_x, min_y, max_y)，打开时算一次，
-    /// 跟随过程中只做纯算术，不去问系统要显示器信息（否则每次移动三趟 IPC，很卡）。
-    bounds: Option<(i32, i32, i32, i32)>,
-}
-
-static CHAT_FOLLOW: std::sync::OnceLock<std::sync::Mutex<ChatFollowState>> =
-    std::sync::OnceLock::new();
-static CHAT_MOVE_HOOKED: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
-
-fn chat_follow_state() -> &'static std::sync::Mutex<ChatFollowState> {
-    CHAT_FOLLOW.get_or_init(|| std::sync::Mutex::new(ChatFollowState::default()))
-}
-
-/// 把窗口位置夹进它所在显示器的可见范围内。显示器比窗口还小时先保证不 panic。
-fn clamp_window_to_monitor(win: &tauri::WebviewWindow, x: i32, y: i32) -> (i32, i32) {
-    let Ok(Some(mon)) = win.current_monitor() else {
-        return (x, y);
-    };
-    let Ok(size) = win.outer_size() else {
-        return (x, y);
-    };
-    let mp = mon.position();
-    let ms = mon.size();
-    let margin = 8;
-    let min_x = mp.x + margin;
-    let max_x = mp.x + ms.width as i32 - size.width as i32 - margin;
-    let min_y = mp.y + margin;
-    let max_y = mp.y + ms.height as i32 - size.height as i32 - margin;
-    (
-        x.clamp(min_x.min(max_x), max_x.min(min_x)),
-        y.clamp(min_y.min(max_y), max_y.min(min_y)),
-    )
-}
-
-/// 聊天窗打开或重新定位后调用：记下新的偏移、活动范围，并清掉待消费的 last_set。
-fn remember_chat_anchor(chat: &tauri::WebviewWindow, pet: (i32, i32), chat_pos: (i32, i32)) {
-    let bounds = match (chat.current_monitor(), chat.outer_size()) {
-        (Ok(Some(mon)), Ok(size)) => {
-            let mp = mon.position();
-            let ms = mon.size();
-            let margin = 8;
-            Some((
-                mp.x + margin,
-                mp.x + ms.width as i32 - size.width as i32 - margin,
-                mp.y + margin,
-                mp.y + ms.height as i32 - size.height as i32 - margin,
-            ))
-        }
-        _ => None,
-    };
-    let mut st = chat_follow_state().lock().unwrap();
-    st.offset = Some((chat_pos.0 - pet.0, chat_pos.1 - pet.1));
-    st.pet_pos = Some(pet);
-    st.last_set = Some(chat_pos);
-    st.bounds = bounds;
-}
-
-/// 聊天窗自己的 Moved 事件：用户拖动、或前端调整高度时，更新偏移。
-fn attach_chat_move_hook(chat: &tauri::WebviewWindow) {
-    if CHAT_MOVE_HOOKED.swap(true, std::sync::atomic::Ordering::SeqCst) {
-        return;
-    }
-    chat.on_window_event(move |event| {
-        let tauri::WindowEvent::Moved(pos) = event else {
-            return;
-        };
-        let mut st = chat_follow_state().lock().unwrap();
-        if st.last_set == Some((pos.x, pos.y)) {
-            // 是我们自己设的，消费掉，别当成用户拖动
-            st.last_set = None;
-            return;
-        }
-        if let Some((px, py)) = st.pet_pos {
-            st.offset = Some((pos.x - px, pos.y - py));
-        }
-    });
-}
-
-/// 桌宠移动时按固定偏移把聊天窗带过去。
-/// 用偏移而不是增量：被屏幕边界夹住时只是这次没跟上，她一走回来就自动归位，不会累积下沉。
-fn install_chat_follow(app: AppHandle) {
-    let Some(main) = app.get_webview_window("main") else {
-        return;
-    };
-    let app_ev = app.clone();
-    main.on_window_event(move |event| {
-        let tauri::WindowEvent::Moved(pos) = event else {
-            return;
-        };
-        let pet = (pos.x, pos.y);
-        let Some(chat) = app_ev.get_webview_window("chat") else {
-            chat_follow_state().lock().unwrap().pet_pos = Some(pet);
-            return;
-        };
-        if !chat.is_visible().unwrap_or(false) {
-            let mut st = chat_follow_state().lock().unwrap();
-            st.pet_pos = Some(pet);
-            // 不可见时锚点失效，下次显示重新算
-            st.offset = None;
-            return;
-        }
-
-        let (stored, bounds) = {
-            let mut st = chat_follow_state().lock().unwrap();
-            st.pet_pos = Some(pet);
-            (st.offset, st.bounds)
-        };
-
-        // 自愈：偏移不存在或离谱时，用聊天窗此刻的真实位置重算一次。
-        // 这样即使 open_chat_window 里算错了锚点，拖第一下就会自动纠正。
-        let mut offset = stored;
-        let suspicious = match offset {
-            None => true,
-            Some((ox, oy)) => ox.abs() > 4000 || oy.abs() > 4000,
-        };
-        if suspicious {
-            match chat.outer_position() {
-                Ok(cp) => {
-                    let fixed = (cp.x - pet.0, cp.y - pet.1);
-                    let mut st = chat_follow_state().lock().unwrap();
-                    st.offset = Some(fixed);
-                    offset = Some(fixed);
-                }
-                Err(_) => return,
-            }
-        }
-        let Some((ox, oy)) = offset else {
-            return;
-        };
-        let mut x = pet.0 + ox;
-        let mut y = pet.1 + oy;
-        if let Some((min_x, max_x, min_y, max_y)) = bounds {
-            x = x.clamp(min_x.min(max_x), max_x.min(min_x));
-            y = y.clamp(min_y.min(max_y), max_y.min(min_y));
-        }
-        {
-            let mut st = chat_follow_state().lock().unwrap();
-            st.last_set = Some((x, y));
-        }
-        let _ = chat.set_position(tauri::PhysicalPosition::new(x, y));
-    });
-}
 /// 必须与 `open_context_menu` 一样是 `async fn`。
 /// 同步命令里调用 `WebviewWindowBuilder::build()` 会卡死 Windows 的 tao 事件循环：
 /// 窗口能建出来，但 set_position / show 全部静默失效，窗口永远不可见。
@@ -854,10 +703,10 @@ async fn open_chat_window(app: AppHandle) -> Result<(), String> {
             .show()
             .map_err(|e| format!("显示聊天窗失败：{e}"))?;
         let _ = existing.set_focus();
-        attach_chat_move_hook(&existing);
+        chat_follow::attach_logger(&existing);
         if let Some(main) = app.get_webview_window("main") {
             if let (Ok(mp), Ok(cp)) = (main.outer_position(), existing.outer_position()) {
-                remember_chat_anchor(&existing, (mp.x, mp.y), (cp.x, cp.y));
+                chat_follow::set_offset((cp.x - mp.x, cp.y - mp.y));
             }
         }
         return Ok(());
@@ -925,13 +774,13 @@ async fn open_chat_window(app: AppHandle) -> Result<(), String> {
         }
     }
 
-    attach_chat_move_hook(&win);
+    chat_follow::attach_logger(&win);
     // 之前这里用 win.outer_position() 回读，但 set_position 还没生效，
     // 读到的是系统默认的 (32,32)，偏移被算成巨大负数 —— 一拖桌宠聊天窗就飞左上角。
     if let Some(p) = placed {
         if let Some(main) = app.get_webview_window("main") {
             if let Ok(mp) = main.outer_position() {
-                remember_chat_anchor(&win, (mp.x, mp.y), p);
+                chat_follow::set_offset((p.0 - mp.x, p.1 - mp.y));
             }
         }
     }
@@ -2680,7 +2529,7 @@ pub fn run() {
                 paused_for_setup,
             );
             start_storage_watcher(handle.clone());
-            install_chat_follow(handle.clone());
+            chat_follow::install(handle.clone());
             updater::start_background_update_checker(handle.clone());
 
             let http_handle = handle.clone();
@@ -2771,6 +2620,7 @@ pub fn run() {
             chat::delete_conversation,
             chat::export_conversation,
             chat::copy_text,
+            chat_follow::sync_offset_from_frontend,
             save_tail_picker_selection,
             set_dragging,
             start_pet_drag,

@@ -13,7 +13,14 @@ headEl.addEventListener('pointerdown', (ev) => {
   const target = ev.target as HTMLElement | null;
   if (target && target.closest('button, select')) return;
   ev.preventDefault();
-  void win.startDragging();
+  void win.startDragging()
+    .then(() => invoke('sync_offset_from_frontend'))
+    .catch(() => {});
+});
+
+// 兜底：即使 startDragging 提前返回，松手时也同步一次
+window.addEventListener('pointerup', () => {
+  void invoke('sync_offset_from_frontend');
 });
 const logEl = document.getElementById('chat-log') as HTMLDivElement;
 const formEl = document.getElementById('chat-form') as HTMLFormElement;
@@ -153,6 +160,8 @@ async function fitHeight(scrollToBottom: boolean): Promise<void> {
 
     await win.setSize(new LogicalSize(widthLogical, targetLogical));
     await win.setPosition(new PhysicalPosition(pos.x, nextY));
+    // 窗口为保持底边而移动了，告诉 Rust 重建跟随偏移
+    void invoke('sync_offset_from_frontend');
     if (scrollToBottom) logEl.scrollTop = logEl.scrollHeight;
   } catch {
     // 窗口关闭中等情况，忽略
