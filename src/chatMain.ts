@@ -7,6 +7,14 @@ const win = getCurrentWindow();
 
 const cardEl = document.getElementById('chat-card') as HTMLDivElement;
 const headEl = cardEl.querySelector('.chat-head') as HTMLElement;
+
+// 标题栏可拖动整个聊天窗；按钮和下拉框除外
+headEl.addEventListener('pointerdown', (ev) => {
+  const target = ev.target as HTMLElement | null;
+  if (target && target.closest('button, select')) return;
+  ev.preventDefault();
+  void win.startDragging();
+});
 const logEl = document.getElementById('chat-log') as HTMLDivElement;
 const formEl = document.getElementById('chat-form') as HTMLFormElement;
 const inputEl = document.getElementById('chat-input') as HTMLTextAreaElement;

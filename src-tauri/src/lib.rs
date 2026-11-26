@@ -691,6 +691,70 @@ fn set_chat_bubble_bounds(state: State<'_, AppState>, bounds: Option<[f64; 4]>) 
 }
 
 /// 弹出聊天气泡卡片窗口（独立窗口，单例复用）。
+
+// ---------------- 聊天窗跟随桌宠 ----------------
+
+static LAST_PET_POS: std::sync::OnceLock<std::sync::Mutex<Option<(i32, i32)>>> =
+    std::sync::OnceLock::new();
+
+/// 把窗口位置夹进它所在显示器的可见范围内。显示器比窗口还小时先保证不 panic。
+fn clamp_window_to_monitor(win: &tauri::WebviewWindow, x: i32, y: i32) -> (i32, i32) {
+    let Ok(Some(mon)) = win.current_monitor() else {
+        return (x, y);
+    };
+    let Ok(size) = win.outer_size() else {
+        return (x, y);
+    };
+    let mp = mon.position();
+    let ms = mon.size();
+    let margin = 8;
+    let min_x = mp.x + margin;
+    let max_x = mp.x + ms.width as i32 - size.width as i32 - margin;
+    let min_y = mp.y + margin;
+    let max_y = mp.y + ms.height as i32 - size.height as i32 - margin;
+    (
+        x.clamp(min_x.min(max_x), max_x.max(min_x)),
+        y.clamp(min_y.min(max_y), max_y.max(min_y)),
+    )
+}
+
+/// 桌宠移动时，聊天窗按「位移增量」跟着走。
+/// 用增量而不是固定偏移，用户手动把聊天窗拖到别处后，相对位置自然保留。
+fn install_chat_follow(app: AppHandle) {
+    let Some(main) = app.get_webview_window("main") else {
+        return;
+    };
+    let app_ev = app.clone();
+    main.on_window_event(move |event| {
+        let tauri::WindowEvent::Moved(pos) = event else {
+            return;
+        };
+        let store = LAST_PET_POS.get_or_init(|| std::sync::Mutex::new(None));
+        let (had_prev, dx, dy) = {
+            let mut last = store.lock().unwrap();
+            let prev = *last;
+            *last = Some((pos.x, pos.y));
+            match prev {
+                Some((px, py)) => (true, pos.x - px, pos.y - py),
+                None => (false, 0, 0),
+            }
+        };
+        if !had_prev || (dx == 0 && dy == 0) {
+            return;
+        }
+        let Some(chat) = app_ev.get_webview_window("chat") else {
+            return;
+        };
+        if !chat.is_visible().unwrap_or(false) {
+            return;
+        }
+        let Ok(cp) = chat.outer_position() else {
+            return;
+        };
+        let (x, y) = clamp_window_to_monitor(&chat, cp.x + dx, cp.y + dy);
+        let _ = chat.set_position(tauri::PhysicalPosition::new(x, y));
+    });
+}
 /// 必须与 `open_context_menu` 一样是 `async fn`。
 /// 同步命令里调用 `WebviewWindowBuilder::build()` 会卡死 Windows 的 tao 事件循环：
 /// 窗口能建出来，但 set_position / show 全部静默失效，窗口永远不可见。
@@ -2506,6 +2570,7 @@ pub fn run() {
                 paused_for_setup,
             );
             start_storage_watcher(handle.clone());
+            install_chat_follow(handle.clone());
             updater::start_background_update_checker(handle.clone());
 
             let http_handle = handle.clone();

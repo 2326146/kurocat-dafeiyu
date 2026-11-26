@@ -418,3 +418,11 @@
   opacity: 1;
   transform: translate(-50%, 0);
 }
+
+.chat-head {
+  cursor: grab;
+}
+
+.chat-head:active {
+  cursor: grabbing;
+}
