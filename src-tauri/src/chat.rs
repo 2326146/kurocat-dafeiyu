@@ -286,8 +286,11 @@ pub fn send_chat_stream(
     provider_id: String,
     messages: Vec<ChatMessage>,
     request_id: String,
+    // 前端工具条的「深度思考」开关；Some 时覆盖配置里的 thinking
+    thinking: Option<String>,
 ) -> Result<(), String> {
     let p = resolve_provider(&provider_id)?;
+    let thinking = thinking.or_else(|| p.thinking.clone());
 
     let mut body = serde_json::json!({
         "model": p.model,
@@ -295,7 +298,7 @@ pub fn send_chat_stream(
         "temperature": p.temperature.unwrap_or(0.8),
         "stream": true,
     });
-    if let Some(t) = p.thinking.as_deref() {
+    if let Some(t) = thinking.as_deref() {
         body["thinking"] = serde_json::json!({ "type": t });
     }
     let payload = serde_json::to_vec(&body).map_err(|e| e.to_string())?;

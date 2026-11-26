@@ -23,15 +23,22 @@
         <button class="chat-icon-btn" id="btn-chat-collapse" type="button" title="收起">−</button>
       </header>
       <div class="chat-log" id="chat-log"></div>
-      <form class="chat-input-row" id="chat-form">
-        <textarea
-          id="chat-input"
-          rows="1"
-          placeholder="说点什么…"
-          autocomplete="off"
-          spellcheck="false"
-        ></textarea>
-        <button class="chat-send" type="submit" title="发送">↑</button>
+      <form class="chat-footer" id="chat-form">
+        <div class="chat-input-row">
+          <textarea
+            id="chat-input"
+            rows="1"
+            placeholder="说点什么…"
+            autocomplete="off"
+            spellcheck="false"
+          ></textarea>
+          <button class="chat-send" type="submit" title="发送">↑</button>
+        </div>
+        <div class="chat-toolbar">
+          <button class="chat-pill" id="toggle-thinking" type="button" aria-pressed="false">
+            🧠 深度思考
+          </button>
+        </div>
       </form>
     </div>
     <script type="module" src="/src/chatMain.ts"></script>

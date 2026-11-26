@@ -412,11 +412,34 @@ async function send(): Promise<void> {
       providerId,
       messages,
       requestId: activeRequestId,
+      thinking: thinkingOn ? 'enabled' : 'disabled',
     });
   } catch (err) {
     finishRequest(null, String(err));
   }
 }
+
+// ---------- 深度思考开关 ----------
+
+const THINK_KEY = 'kuro-chat-thinking';
+let thinkingOn = localStorage.getItem(THINK_KEY) === 'on';
+
+const thinkEl = document.getElementById('toggle-thinking') as HTMLButtonElement | null;
+
+function renderThinking(): void {
+  if (!thinkEl) return;
+  thinkEl.setAttribute('aria-pressed', String(thinkingOn));
+  thinkEl.textContent = thinkingOn ? '🧠 深度思考 开' : '🧠 深度思考';
+}
+
+if (thinkEl) {
+  thinkEl.addEventListener('click', () => {
+    thinkingOn = !thinkingOn;
+    localStorage.setItem(THINK_KEY, thinkingOn ? 'on' : 'off');
+    renderThinking();
+  });
+}
+renderThinking();
 
 // ---------- 「深入」与导出 ----------
 
